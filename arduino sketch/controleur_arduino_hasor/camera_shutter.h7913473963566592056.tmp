@@ -1,0 +1,113 @@
+/*=============================================*/
+/*     METHODS DECLARATION  CAMERA SHUTTER     */
+/*=============================================*/
+#include <multiCameraIrControl.h>
+
+//For pinout of various brand of camera, check http://www.doc-diy.net/photo/remote_pinout/
+
+
+
+void init_camera_shutter();
+void shutter_now();
+void shutter_now_IR();
+void shutter_now_Relay();
+void shutter_loop();
+
+struct Relay_State{
+  unsigned long on_delay; 
+  unsigned long on_time;
+  byte is_on;
+} relay = {0,0,0};
+
+
+struct Camera{
+  Nikon nikon;
+  Canon canon;
+  CanonWLDC100 canonWLDC100;
+  Pentax pentax;
+  Olympus olympus;
+  Minolta minolta;
+  Sony sony;
+} camera = {
+  Nikon(PIN_SHUTTER_IR_LED),
+  Canon(PIN_SHUTTER_IR_LED),
+  CanonWLDC100(PIN_SHUTTER_IR_LED),
+  Pentax(PIN_SHUTTER_IR_LED),
+  Olympus(PIN_SHUTTER_IR_LED),
+  Minolta(PIN_SHUTTER_IR_LED),
+  Sony(PIN_SHUTTER_IR_LED)
+};
+
+
+void init_camera_shutter(){
+  Serial.println("initialising camera shutter");
+  pinMode(PIN_SHUTTER_RELAY, OUTPUT);
+  
+  _setRelayOFF();
+}
+
+
+void _setRelayOFF(){
+    digitalWrite(PIN_SHUTTER_RELAY, RELAY_OPEN);
+    relay.is_ON = false;
+}
+void _setRelayON(){
+    digitalWrite(PIN_SHUTTER_RELAY, RELAY_CLOSED);
+    relay.is_ON = true;
+    relay.on_time = millis();
+}
+
+void shutter_now(){
+  Serial.println("shutter camera");
+
+  if(params.shutter_type == SHUTTER_TYPE_RELAY) 
+    shutter_now_Relay();
+  else if(params.shutter_type == SHUTTER_TYPE_IR) 
+    shutter_now_IR();
+}
+
+
+
+void shutter_now_IR(){
+  Serial.print("IR triggered (type ");
+  Serial.print(params.IR_signal_id);
+  Serial.println(")");
+
+  switch(params.IR_signal_id){
+    case IR_NIKON_ID:        {camera.nikon.shutterNow();break;}
+    case IR_CANON_ID:        {camera.canon.shutterNow();break;}
+    case IR_CANONWLDC100_ID: {camera.canonWLDC100.shutterNow();break;}
+    case IR_PENTAX_ID:       {camera.pentax.shutterNow();break;}
+    case IR_OLYMPUS_ID:      {camera.olympus.shutterNow();break;}
+    case IR_MINOLTA_ID:      {camera.minolta.shutterNow();break;}
+    case IR_SONY_ID:         {camera.sony.shutterNow();break;}
+    case IR_CUSTOM_ID:{
+      Serial.println("Sending Custom IR");
+      break;
+    }
+    default: break;;
+  }
+}
+
+void shutter_now_Relay(){
+    Serial.println("relay triggered");
+    //Methode bloquante, faire avec un timer?
+    _setRelayON();
+    
+    delay(params.shutter_duration);
+    digitalWrite(PIN_SHUTTER_RELAY, RELAY_OPEN);
+}
+
+void shutter_loop(){
+
+    ellapsed_relay_ON = millis() - relay.on_time;
+    
+    if (relay.is_ON and ellapsed_relay_ON >= params.shutter_duration){
+
+      sprintf(tmp_buffer, "Switching off relay after %ld ms", i, ellapsed);
+      Serial.println(tmp_buffer);
+      _setRelayOFF();
+    }
+}
+
+

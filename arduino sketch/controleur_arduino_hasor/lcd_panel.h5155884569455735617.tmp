@@ -1,0 +1,304 @@
+/*=============================================*/
+/*       CONFIGURE LCD SMART CONTROLER         */
+/*=============================================*/
+
+/*
+ * http://www.humblecoder.com/arduino-menu-system-library/
+ */
+#include <MenuSystem.h>
+
+
+
+#include <LiquidCrystal.h>
+
+
+
+
+// for rotary encoder
+#include <Task.h>
+#include "RotaryEncoderTask.h" // this implements the rotary encoder task "source:Task_by_Makuna"
+
+
+
+#define LCD_PINS_RS 16
+#define LCD_PINS_ENABLE 17
+#define LCD_PINS_D4 23
+#define LCD_PINS_D5 25
+#define LCD_PINS_D6 27
+#define LCD_PINS_D7 29
+
+#define BEEPER_PIN 37
+
+#define BTN_EN1 33
+#define BTN_EN2 31
+#define BTN_ENC 35
+
+#define SD_DETECT_PIN 49
+#define KILL_PIN 41
+
+#define LCD_BACKLIGHT_PIN 39
+
+
+LiquidCrystal lcd(LCD_PINS_RS, LCD_PINS_ENABLE, LCD_PINS_D4, LCD_PINS_D5, LCD_PINS_D6, LCD_PINS_D7);
+
+
+TaskManager taskManager;
+
+// foreward delcare functions passed to task constructors now required
+void HandleButtonChanged(EncoderButtonState state);
+void HandleRotationChanged(int8_t rotationDelta);
+
+RotaryEncoderTask RotaryTask(HandleRotationChanged,
+    HandleButtonChanged,
+    BTN_EN1,
+    BTN_EN2,
+    BTN_ENC);
+
+
+    
+/*=============================================*/
+/*            METHODS DECLARATION  PANEL       */
+/*=============================================*/
+void init_lcd_panel();
+void init_lcd_panel_pins();
+void switch_on_backlight(byte); //not working
+void rotary_encoder_loop();
+
+/*=============================================*/
+/*            METHODS DECLARATION MENU         */
+/*=============================================*/
+void init_menu();
+void on_menu_start(MenuItem* pMenuItem);
+void on_menu_set_alarm(MenuItem* pMenuItem);
+void on_menu_set_date(MenuItem* pMenuItem);
+void on_menu_set_time(MenuItem* pMenuItem);
+void on_menu_set_brightness(MenuItem* pMenuItem);
+
+
+
+int cursor_position_in_menu = 0; /* beetween 0 and nb_component_in_menu */
+
+class LCDRenderer : public MenuComponentRenderer
+{
+public:
+    virtual void render(Menu const& menu) const
+    {
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print(menu.get_name());
+        lcd.setCursor(0,1);
+        menu.get_current_component()->render(*this);
+    }
+
+    virtual void render_menu_item(MenuItem const& menu_item) const
+    {
+        lcd.print(menu_item.get_name());
+    }
+
+    virtual void render_back_menu_item(BackMenuItem const& menu_item) const
+    {
+        lcd.print(menu_item.get_name());
+    }
+
+    virtual void render_numeric_menu_item(NumericMenuItem const& menu_item) const
+    {
+        lcd.print(menu_item.get_name());
+    }
+
+    virtual void render_menu(Menu const& menu) const
+    {
+        lcd.print(menu.get_name());
+    }
+};
+LCDRenderer lcd_renderer;
+
+/*=============================================*/
+/*       CREATE MENU ITEMS                     */
+/*=============================================*/
+MenuSystem menu_system(lcd_renderer);
+Menu root_menu("");
+    MenuItem mi_start("START",&on_menu_start);
+    MenuItem mi_stop("STOP",&on_menu_start);
+    Menu mu_configuration("Configuration");
+        Menu mu_photo_trigger("Photo Trigger");  
+          Menu mu_photo_relay("Solid state relay");
+          Menu mu_photo_ir_signal("IR Signal");
+          MenuItem mi_photo_trigger_min_duration("Duration",&on_menu_set_alarm);
+          Menu mu_photo_speeds("Speeds settings");
+              MenuItem mi_photo_speeds_stabilization_delay("Stabilization delay",&on_menu_start);
+              MenuItem mi_photo_motor_speed("Motor speed",&on_menu_start);
+              MenuItem mi_photo_lights_on_delay("LightOn delay",&on_menu_start);
+    MenuItem mi_infos("Informations",&on_menu_start);
+
+    
+MenuItem mi_time("TIME",&on_menu_set_time);  
+MenuItem mi_date("DATE",&on_menu_set_date);   
+MenuItem mi_alarm("ALARM",&on_menu_set_alarm);  
+Menu mu_disp("DISP");  
+MenuItem mi_disp_brightness("BRTNS", &on_menu_set_brightness);  
+
+NumericMenuItem numericItem_test("ValeurNum", &on_menu_set_time, 50.,0.,100.,0.5);
+
+
+void init_menu()
+{
+  // Menus
+  menu_system.get_root_menu().add_item(&mi_start);
+  menu_system.get_root_menu().add_item(&mi_stop);
+  menu_system.get_root_menu().add_item(&numericItem_test);
+  menu_system.get_root_menu().add_menu(&mu_configuration);
+      menu_system.get_root_menu().add_menu(&mu_photo_speeds);
+          menu_system.get_root_menu().add_item(&mi_photo_speeds_stabilization_delay);
+          menu_system.get_root_menu().add_item(&mi_photo_motor_speed);
+          menu_system.get_root_menu().add_item(&mi_photo_lights_on_delay); 
+      menu_system.get_root_menu().add_item(&mi_photo_trigger_min_duration);
+  menu_system.get_root_menu().add_item(&mi_infos);
+
+
+  menu_system.display();
+}
+
+
+
+
+/*=============================================*/
+/*            METHODS  PANEL                   */
+/*=============================================*/
+void init_lcd_panel(){
+
+  Serial.println("Smart panel init");
+  
+  taskManager.StartTask(&RotaryTask);
+
+  init_lcd_panel_pins();
+
+  lcd.begin(20, 4);
+
+  lcd.setCursor(2,1);
+  lcd.print("ZENITH OPEN RTI");
+  lcd.setCursor(3,2);
+  lcd.print("Firmware v1.0");
+//  delay(2000);
+//  lcd.clear();
+}
+
+void switch_on_backlight(byte state){
+  
+  digitalWrite(LCD_BACKLIGHT_PIN, state);
+}
+
+
+void init_lcd_panel_pins(){
+  
+  pinMode(SD_DETECT_PIN, INPUT);
+  
+  pinMode(LCD_BACKLIGHT_PIN, OUTPUT);
+  pinMode(BEEPER_PIN, OUTPUT);
+  pinMode(KILL_PIN, OUTPUT);
+}
+
+
+
+/*=============================================*/
+/*            METHODS  MENU                      */
+/*=============================================*/
+
+void on_menu_start(MenuItem* pMenuItem)  
+{
+  lcd.clear();
+  lcd.setCursor(0,1);
+  lcd.print("on_menu_start Selected  ");
+  delay(1500); // so we can look the result on the LCD
+}
+
+void on_menu_set_alarm(MenuItem* pMenuItem)  
+{
+  lcd.clear();
+  lcd.setCursor(0,1);
+  lcd.print("on_menu_set_alarm Selected  ");
+  delay(1500); // so we can look the result on the LCD
+}
+
+void on_menu_set_date(MenuItem* pMenuItem)  
+{
+  lcd.setCursor(0,1);
+  lcd.print("on_menu_set_date Selected  ");
+  delay(1500); // so we can look the result on the LCD
+}
+
+void on_menu_set_time(MenuItem* pMenuItem)  
+{
+  lcd.setCursor(0,1);
+  lcd.print("on_menu_set_time Selected  ");
+  delay(1500); // so we can look the result on the LCD
+}
+
+void on_menu_set_brightness(MenuItem* pMenuItem)  
+{
+  lcd.setCursor(0,1);
+  lcd.print("on_menu_set_brightness Selected  ");
+  delay(1500); // so we can look the result on the LCD
+}
+
+/*=============================================*/
+/*   METHODS ROTARY ENCODER                    */
+/*=============================================*/
+void rotary_encoder_loop(){
+  taskManager.Loop();
+}
+
+
+
+void HandleButtonChanged(EncoderButtonState state)
+{
+    if (state == EncoderButtonState_Pressed)
+    {
+        Serial.println("Pressed - ");
+        menu_system.select();
+        menu_system.display();
+    }
+    else if (state == EncoderButtonState_Released)
+    {
+        Serial.println("Released - ");
+    } 
+    else
+    {
+        Serial.println("Auto-repeat - ");
+    }
+}
+
+void HandleRotationChanged(int8_t rotationDelta)
+{
+    if (rotationDelta > 0)
+    {
+         update_cursor_position_in_menu(CLOCKWISE);
+         Serial.print("clockwise = ");
+         menu_system.next();
+         menu_system.display();
+         
+    }
+    else
+    {
+        update_cursor_position_in_menu(ANTICLOCKWISE);
+        Serial.print("counter-clockwise = ");
+        menu_system.prev();
+        menu_system.display();
+    }
+
+    Serial.println(RotaryTask.RotationValue());
+}
+
+void update_cursor_position_in_menu(byte dir){
+
+  if(dir == CLOCKWISE && cursor_position_in_menu < menu_system.get_current_menu().get_num_components() - 1 ){
+    Serial.printn("infffffffff");
+    cursor_position_in_menu++;
+  }
+  if(dir == ANTICLOCKWISE && cursor_position_in_menu > 0){{ 
+    Serial.println("gggghhhhhh");
+    cursor_position_in_menu--;
+  }
+}
+
+
+

@@ -1,0 +1,68 @@
+/*=============================================*/
+/*     METHODS DECLARATION  CAMERA SHUTTER     */
+/*=============================================*/
+#include <multiCameraIrControl.h>
+
+void init_camera_shutter();
+void shutter_now();
+void shutter_now_IR();
+void shutter_now_Relay();
+
+struct Camera{
+  Nikon nikon;
+  Canon canon;
+  CanonWLDC100 canonWLDC100;
+  Pentax pentax;
+  Olympus olympus;
+  Minolta minolta;
+  Sony sony;
+} camera = {
+  Nikon(PIN_SHUTTER_IR_LED),
+  Canon(PIN_SHUTTER_IR_LED),
+  CanonWLDC100(PIN_SHUTTER_IR_LED),
+  Pentax(PIN_SHUTTER_IR_LED),
+  Olympus(PIN_SHUTTER_IR_LED),
+  Minolta(PIN_SHUTTER_IR_LED),
+  Sony(PIN_SHUTTER_IR_LED)};
+};
+
+
+void init_camera_shutter(){
+  Serial.println("initialising camera shutter");
+
+  pinMode(PIN_SHUTTER_RELAY, OUTPUT);
+  digitalWrite(PIN_SHUTTER_RELAY, RELAY_OPEN);
+
+  
+}
+
+void shutter_now(){
+  Serial.println("shutter camera");
+
+  if(params.shutter_type == SHUTTER_TYPE_RELAY) 
+    shutter_now_Relay();
+  else if(params.shutter_type == SHUTTER_TYPE_IR) 
+    shutter_now_IR();
+}
+
+
+
+void shutter_now_IR(){
+  Serial.println("IR triggered");
+
+  if(params.IR_signal_id == IR_CUSTOM_ID){
+    Serial.println("sending custom IR signal")
+  }
+  else{
+      camera[params.IR_signal_id].shutter_now()
+  }
+
+}
+
+void shutter_now_Relay(){
+    Serial.println("relay triggered");
+    //Methode bloquante, faire avec un timer?
+    digitalWrite(PIN_SHUTTER_RELAY, RELAY_CLOSED);
+    delay(params.shutter_duration);
+    digitalWrite(PIN_SHUTTER_RELAY, RELAY_OPEN);
+}

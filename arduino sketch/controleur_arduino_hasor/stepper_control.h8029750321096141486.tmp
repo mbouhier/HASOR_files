@@ -1,0 +1,252 @@
+/**
+ * Zenith Open RTI
+ * Copyright (C) 2017
+**/
+
+#define CLOCKWISE LOW
+#define ANTICLOCKWISE HIGH
+
+#define END_SWITCH_REACHED  LOW /*sensor state when triggered*/
+
+
+#include <AccelStepper.h>
+
+
+
+/*=============================================*/
+/*            VARIABLES DECLARATION            */
+/*=============================================*/
+
+
+
+class Motor{
+  
+
+  
+  private:
+    void _update_motor_position_counter(int, byte);
+    void _reset_motor_position_counter();
+    byte _motor_can_move_further(byte);
+    void _pulse_MC_driver();
+    byte _is_destination_in_range(int);
+    void _update_flags();
+    void _reset_position_counter();
+    
+
+  public:
+    void init(byte, byte, byte, byte);
+    void stepNow(int, byte);
+    int count_steps_in_complete_rotation();
+    void set_speed(long);
+    byte set_position(int);
+    void set_state(byte);
+    void set_direction(byte);
+    void end_switch_left_ISR();
+    void end_switch_right_ISR(); 
+    void loop();
+
+    
+    int steps_in_complete_rotation;
+    int position = 0;
+    int destination = 0;
+    byte direction = CLOCKWISE;
+    long speed = 4000;
+    long start_time = millis(); //debut du mouvement
+    long end_time = millis();   //fin du mouvement
+    long last_step_time = millis();
+    
+    byte destination_reached = false;
+    volatile byte end_switch_left_state = !END_SWITCH_REACHED;
+    volatile byte end_switch_right_state = !END_SWITCH_REACHED;
+    byte pin_mc_enable;
+    byte pin_mc_step;
+    byte pin_mc_dir;
+    byte pin_sensor_end_switch_left;
+    byte pin_sensor_end_switch_right;
+    AccelStepper stepper;
+
+} motor;
+
+//A wrapper for ISR because attachInterrupt whant only non-member function
+//http://arduino.stackexchange.com/questions/4862/attachinterrupt-in-a-library
+void motor_end_switch_left_ISR(){
+  motor.end_switch_left_ISR();
+}
+void motor_end_switch_right_ISR(){
+  motor.end_switch_right_ISR();
+}
+
+#define MIN_MOTOR_SPEED 100
+#define MAX_MOTOR_SPEED 500
+
+void Motor::init(byte pin_mc_enable, byte pin_mc_step, byte pin_mc_dir, byte pin_sensor_end_switch_left){
+  /*=============================================*/
+  /*               DEFINE OUTPUTS                */
+  /*=============================================*/
+  pinMode(pin_mc_enable, OUTPUT);
+  stepper = AccelStepper(AccelStepper::DRIVER, uint8_t(PIN_MC_STEP), uint8_t(PIN_MC_DIR));
+//  stepper.setEnablePin(pin_mc_enable);
+//  stepper.enableOutputs();
+  stepper.setMaxSpeed(MAX_MOTOR_SPEED);
+  stepper.setAcceleration(1000);
+
+  /*=============================================*/
+  /*               DEFINE INPUTS                 */
+  /*=============================================*/
+  pinMode(pin_sensor_end_switch_left,INPUT);
+  //pinMode(pin_sensor_end_switch_right,INPUT);
+  
+  /*=============================================*/
+  /*               INITIALISATION                */
+  /*=============================================*/  
+  this->end_switch_left_ISR();
+  this->end_switch_right_ISR();
+  //interrupt have to be attached outside
+  //attachInterrupt(digitalPinToInterrupt(pin_sensor_end_switch_left), this->end_switch_left_ISR, CHANGE);
+  //attachInterrupt(digitalPinToInterrupt(pin_sensor_end_switch_right), this->end_switch_right_ISR, CHANGE);
+  
+  this->pin_mc_enable = pin_mc_enable;
+  this->pin_mc_step = pin_mc_step;
+  this->pin_mc_dir = pin_mc_dir;
+  this->pin_sensor_end_switch_left = pin_sensor_end_switch_left;
+  //this->pin_sensor_end_switch_right = pin_sensor_end_switch_right;
+}
+
+
+
+/*=============================================*/
+/*               MOTOR METHODS                 */
+/*=============================================*/
+
+
+
+void Motor::set_speed(long m_speed){
+  
+}
+
+
+void Motor::loop(){
+  this->_update_flags();
+  stepper.run();
+}
+
+
+
+
+void Motor::_reset_position_counter(){
+  this->stepper.setCurrentPosition(0);
+  this->_update_flags();
+  Serial.print("Motor position reset");
+}
+
+void Motor::_update_flags(){
+   if(this->stepper.distanceToGo()==0){
+      if(!this->destination_reached){
+        this->destination_reached = true;
+        this->end_time = millis();
+      }
+   }
+   else{
+      this->destination_reached = false;
+   }
+}
+
+byte Motor::_motor_can_move_further(byte dir){
+  /* Return True if motor have not reached endstock in clockwise */
+  /* direction or home in anticlockwise direction */
+  if(dir == CLOCKWISE){
+    if(this->end_switch_left_state != END_SWITCH_REACHED) return true;
+    else return false; 
+  }
+  else if(dir == ANTICLOCKWISE){
+    if(this->position > 0) return true;
+    else return false; 
+  }
+}
+
+/*=============================================*/
+/*           CALIBRATION METHODS               */
+/*=============================================*/
+int Motor::count_steps_in_complete_rotation(){
+  elapsedMillis timeElapsed;
+  
+  Serial.print(F("Starting calibration process..."));
+    
+  /*assume that motor is at minimum position or use another sensor*/
+  int step_increment = 1;
+  int step_counter = 0;
+  
+  while(this->end_switch_left_state != END_SWITCH_REACHED){
+    if(timeElapsed > CALIBRATION_TIMEOUT){
+      Serial.println(F("timeout"));
+      step_counter = 0;
+      return step_counter;
+    }
+    this->stepNow(step_increment, CLOCKWISE);
+
+    step_counter++;
+  }
+  
+  Serial.println(F("ok"));
+  Serial.print(F("Steps number: "));
+  Serial.println(step_counter);
+  
+  /*Retour au point de depart, faire avec endswitch "home" si existe*/
+  Serial.println(F("Homming..."));
+  
+  this->set_position(0);
+  
+  Serial.println(F("Homming done"));
+  delay(1000);
+  
+  return step_counter;
+}
+
+/*=============================================*/
+/*               MOTOR METHODS                 */
+/*=============================================*/
+void Motor::end_switch_left_ISR(){
+  if(this->pin_sensor_end_switch_left !=-1 )
+    this->end_switch_left_state = digitalRead(this->pin_sensor_end_switch_left);
+}
+void Motor::end_switch_right_ISR(){
+  if(this->pin_sensor_end_switch_right !=-1 )
+    this->end_switch_right_state = digitalRead(this->pin_sensor_end_switch_right);
+}
+
+
+byte Motor::_is_destination_in_range(int destination){
+  
+  if(destination < 0 || destination > this->steps_in_complete_rotation) return false;
+  else return true;
+}
+
+
+
+void Motor::set_state(byte state){
+  if(DEBUG){
+    Serial.print(F("motor state: "));
+    Serial.println(state);
+  }
+  digitalWrite(this->pin_mc_enable,!state);
+}
+
+
+void Motor::_pulse_MC_driver(){
+  digitalWrite(this->pin_mc_step,HIGH);
+  delayMicroseconds(this->speed);
+  digitalWrite(this->pin_mc_step,LOW);
+  delayMicroseconds(this->speed);
+  //this->last_step_time = millis();
+}
+
+void Motor::set_direction(byte dir){
+  if(DEBUG){
+    Serial.print(F("direction: "));
+    Serial.println(dir);
+  }
+  digitalWrite(this->pin_mc_dir,dir);
+  this->direction = dir;
+}
+
+

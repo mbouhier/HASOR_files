@@ -1,0 +1,623 @@
+/* ===================================================================== *
+ *                                                                       *
+ * DISPLAY SYSTEM                                                        *
+ *                                                                       *
+ * ===================================================================== *
+ * every "disp menu function" needs three functions 
+ * - void LCDML_DISP_setup(func_name)    
+ * - void LCDML_DISP_loop(func_name)     
+ * - void LCDML_DISP_loop_end(func_name)
+ *
+ * EXAMPLE CODE:
+    void LCDML_DISP_setup(..menu_func_name..) 
+    {
+      // setup
+      // is called only if it is started
+
+      // starts a trigger event for the loop function every 100 millisecounds
+      LCDML_DISP_triggerMenu(100);  
+    }
+    
+    void LCDML_DISP_loop(..menu_func_name..)
+    { 
+      // loop
+      // is called when it is triggert
+      // - with LCDML_DISP_triggerMenu( millisecounds ) 
+      // - with every button status change
+
+      // check if any button is presed (enter, up, down, left, right)
+      if(LCDML_BUTTON_checkAny()) {         
+        LCDML_DISP_funcend();
+      } 
+    }
+    
+    void LCDML_DISP_loop_end(..menu_func_name..)
+    {
+      // loop end
+      // this functions is ever called when a DISP function is quit
+      // you can here reset some global vars or do nothing  
+    } 
+ * ===================================================================== *
+ */
+
+// *********************************************************************
+// *************          LOAD/SAVE PARAMETERS         *****************
+// *********************************************************************
+#include <EEPROM.h>
+#define PARAMETERS_VERSION "pv1"
+#define PARAMETERS_ADRESS  32
+
+struct ZenithParameters{
+  char parameters_version[4];
+  int acquisition_mode_id;
+  int relay_normal_state_id;
+  long motor_speed;
+  long stabilization_delay;
+  long trigger_duration;
+  long led_on_duration;
+  int steps_count;
+  int min_angle;
+  int max_angle;
+  int IR_signal_id;
+  int IR_Signal;
+} params = {
+  PARAMETERS_VERSION,
+  0,
+  0,
+  500,
+  20,
+  500,
+  1600,
+  12,
+  0,
+  350,
+  0,
+  11111
+};
+
+void saveParametersInEeprom(){
+  EEPROM.put(PARAMETERS_ADRESS, params);
+  Serial.println("Parameters saved in eeprom");
+}
+void loadParametersFromEeprom(){
+  //Check if parameters structure already exists in memory
+  if(isValidParameters())
+  {
+    EEPROM.get(PARAMETERS_ADRESS, params);
+    Serial.println("Parameters loaded from EEPROM");
+  }
+  else{
+    Serial.println("Invalid parameters in eeprom");
+  }
+}
+
+byte isValidParameters(){
+  if (EEPROM.read(PARAMETERS_ADRESS + 0) == PARAMETERS_VERSION[0] &&
+      EEPROM.read(PARAMETERS_ADRESS + 1) == PARAMETERS_VERSION[1] &&
+      EEPROM.read(PARAMETERS_ADRESS + 2) == PARAMETERS_VERSION[2]){
+    return true;
+  }
+  else{
+    return false;
+  }
+}
+
+
+
+// *********************************************************************
+// *************          LAUNCH RTI PROCESS         *******************
+// *********************************************************************
+void LCDML_DISP_setup(LCDML_FUNC_launchRtiProcess)
+{
+  //Pour une progressbar voir https://www.carnetdumaker.net/snippets/4/
+  
+  // setup function 
+  lcd.setCursor(0, 0);
+  lcd.print(F("    ACQUISITION     "));
+  lcd.setCursor(0, 1);
+  lcd.print(F("    IN PROGRESS     "));
+
+  LCDML_DISP_triggerMenu(100);  // starts a trigger event for the loop function every 100 millisecounds
+
+}
+
+int blink_flag = 0;
+unsigned long blink_timer = 0;
+unsigned long blink_period = 300;
+int blink_points_count = 11;
+
+void LCDML_DISP_loop(LCDML_FUNC_launchRtiProcess) 
+{
+  if(LCDML_BUTTON_checkEnter()) {
+    LCDML_BUTTON_resetEnter();
+    LCDML_DISP_funcend();
+  }
+
+  // this timer checks every 1000 millisecounds if it is called
+  if((millis() - blink_timer) >= blink_period) {
+    blink_timer = millis();
+    lcd.setCursor(4,2);
+    lcd.print("...........");//same size as blink_points_count
+    lcd.setCursor(4 + blink_flag,2);
+    lcd.print(" ");
+    if(blink_flag > blink_points_count - 2) blink_flag=0;
+    else blink_flag++;
+    }
+  
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_launchRtiProcess)
+{
+
+}  
+
+
+
+// *********************************************************************
+// *************           MOTOR TEST          *************************
+// *********************************************************************
+void LCDML_DISP_setup(LCDML_FUNC_MotorTest)
+{
+  // setup function 
+  lcd.setCursor(0, 0);
+  lcd.print(F("MOTOR TEST (USE L/R)"));
+  lcd.setCursor(0, 1);
+  lcd.print(F("Position:"));
+  lcd.setCursor(0, 2);
+  lcd.print(F("End switch:"));
+  lcd.setCursor(0, 3);
+  lcd.print(F("Home switch:"));
+}
+
+int motor_position_requested = 0;
+int motor_position_max_value = 100;
+int motor_position_min_value = 0;
+byte motor_position_end_switch = 0;
+byte motor_position_home_switch = 0;
+char string_buffer[20];
+
+
+void LCDML_DISP_loop(LCDML_FUNC_MotorTest) 
+{
+  if(LCDML_BUTTON_checkEnter()) { 
+    LCDML_DISP_funcend();
+  }
+  if(LCDML_BUTTON_checkUp()) {
+    LCDML_BUTTON_resetUp();
+    if(motor_position_requested < motor_position_max_value){ 
+      motor_position_requested++;
+    }
+    
+  }
+  if(LCDML_BUTTON_checkDown()) {
+    LCDML_BUTTON_resetDown();
+    if(motor_position_requested > motor_position_min_value){
+      motor_position_requested--;
+    }
+  }
+
+    sprintf(string_buffer, "%d     ",motor_position_requested);
+    lcd.setCursor(10, 1);
+    lcd.print(string_buffer);
+    lcd.setCursor(12, 2);
+    lcd.print(motor_position_end_switch);
+    lcd.setCursor(13, 3);
+    lcd.print(motor_position_home_switch);
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_MotorTest)
+{
+
+}  
+
+// *********************************************************************
+// **      Generic method to display/update long int values           **
+// *********************************************************************
+void genericMethodForLongIntValue_setup(const char *var_name, long &var, long min_value, long max_value, long increment, const char* unit)
+{
+  int str_len = strlen(var_name);
+
+  lcd.clear();
+  lcd.setCursor(int(0.5*( 20 - str_len)), 0);
+  lcd.print(var_name);
+}
+void genericMethodForLongIntValue_loop(const char *var_name, long &var, long min_value, long max_value, long increment, const char* unit)
+{
+ if(LCDML_BUTTON_checkUp()) {
+    LCDML_BUTTON_resetUp();
+    if(var <= (max_value - increment)) var += increment;
+  }
+  if(LCDML_BUTTON_checkDown()) {
+    LCDML_BUTTON_resetDown();
+    if(var >= (min_value + increment)) var -= increment;
+  }
+  if(LCDML_BUTTON_checkEnter()) {
+    LCDML_BUTTON_resetEnter();//a mettre?
+    LCDML_DISP_funcend();
+  }
+  
+  lcd.setCursor(0,2);
+  lcd.print("                    ");
+  sprintf(string_buffer, "%ld %s", var, unit);
+
+  int start_pos = int(0.5*( 20 - strlen(string_buffer)));
+  lcd.setCursor(start_pos,2);
+  lcd.print(string_buffer);
+}
+void genericMethodForLongIntValue_end(const char *var_name, long &var, long min_value, long max_value, long increment, const char* unit)
+{
+  saveParametersInEeprom();
+}
+
+
+
+  
+// *********************************************************************
+// **   Generic method to display/update string values from a list    **
+// *********************************************************************
+void genericMethodForStringValues_setup(const char *var_name, int &selected_position, const char *strings_array[], int element_count)
+{
+  int str_len = strlen(var_name);
+
+  lcd.clear();
+  lcd.setCursor(int(0.5*( 20 - str_len)), 0);
+  lcd.print(var_name);
+}
+void genericMethodForStringValues_loop(const char *var_name, int &selected_position, const char *strings_array[], int element_count)
+{
+ 
+ if(LCDML_BUTTON_checkUp()) {
+    LCDML_BUTTON_resetUp();
+    if(selected_position < element_count - 1) selected_position++;
+  }
+  if(LCDML_BUTTON_checkDown()) {
+    LCDML_BUTTON_resetDown();
+    if(selected_position > 0) selected_position--;
+  }
+  if(LCDML_BUTTON_checkEnter()) {
+    LCDML_BUTTON_resetEnter();
+    LCDML_DISP_funcend();
+  }
+  
+  lcd.setCursor(0,2);
+  lcd.print("                    ");
+  sprintf(string_buffer, "%s", strings_array[selected_position]);
+
+
+  int start_pos = int(0.5*( 20 - strlen(string_buffer)));
+  lcd.setCursor(start_pos,2);
+  lcd.print(string_buffer);
+}
+void genericMethodForStringValues_end(const char *var_name, int &selected_position, const char *strings_array[], int element_count)
+{
+  saveParametersInEeprom();
+}
+
+// *********************************************************************
+// **************END OF GENERIC SETTING METHODS*************************
+// *********************************************************************
+
+
+// *********************************************************************
+// **********          TRIGGER DURATION         ************************
+// *********************************************************************
+//long trigger_duration = 0;
+#define TRIGGER_DURATION_MIN 0L
+#define TRIGGER_DURATION_MAX 5000L
+#define TRIGGER_DURATION_INCREMENT 50L
+
+void LCDML_DISP_setup(LCDML_FUNC_setTriggerDuration)
+{
+  genericMethodForLongIntValue_setup("Trigger Duration", params.trigger_duration, TRIGGER_DURATION_MIN, TRIGGER_DURATION_MAX, TRIGGER_DURATION_INCREMENT, "ms");
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_setTriggerDuration) 
+{
+  genericMethodForLongIntValue_loop("Trigger Duration",  params.trigger_duration, TRIGGER_DURATION_MIN, TRIGGER_DURATION_MAX, TRIGGER_DURATION_INCREMENT, "ms");
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_setTriggerDuration)
+{
+  genericMethodForLongIntValue_end("Trigger Duration",  params.trigger_duration, TRIGGER_DURATION_MIN, TRIGGER_DURATION_MAX, TRIGGER_DURATION_INCREMENT, "ms");
+}
+
+// *********************************************************************
+// **********          MOTOR SPEED          ****************************
+// *********************************************************************
+//long motor_speed = 0;
+#define MOTOR_SPEED_MIN 1L
+#define MOTOR_SPEED_MAX 1000L
+#define MOTOR_SPEED_INCREMENT 10L
+
+void LCDML_DISP_setup(LCDML_FUNC_setMotorSpeed)
+{
+  genericMethodForLongIntValue_setup("Motor Speed", params.motor_speed, MOTOR_SPEED_MIN, MOTOR_SPEED_MAX, MOTOR_SPEED_INCREMENT, "steps/s");
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_setMotorSpeed) 
+{
+  genericMethodForLongIntValue_loop("Motor Speed", params.motor_speed, MOTOR_SPEED_MIN, MOTOR_SPEED_MAX, MOTOR_SPEED_INCREMENT, "steps/s");
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_setMotorSpeed)
+{
+  genericMethodForLongIntValue_end("Motor Speed", params.motor_speed, MOTOR_SPEED_MIN, MOTOR_SPEED_MAX, MOTOR_SPEED_INCREMENT, "steps/s");
+}  
+
+// *********************************************************************
+// **********          STABILIZATION DELAY          ********************
+// *********************************************************************
+//long stabilization_delay = 0;
+#define STABILIZATION_DELAY_MIN 0L
+#define STABILIZATION_DELAY_MAX 2000L
+#define STABILIZATION_DELAY_INCREMENT 10L
+
+void LCDML_DISP_setup(LCDML_FUNC_setStabDelay)
+{
+  genericMethodForLongIntValue_setup("Stab. Delay", params.stabilization_delay, STABILIZATION_DELAY_MIN, STABILIZATION_DELAY_MAX, STABILIZATION_DELAY_INCREMENT, "ms");
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_setStabDelay) 
+{
+  genericMethodForLongIntValue_loop("Stab. Delay", params.stabilization_delay, STABILIZATION_DELAY_MIN, STABILIZATION_DELAY_MAX, STABILIZATION_DELAY_INCREMENT, "ms");
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_setStabDelay)
+{
+  genericMethodForLongIntValue_end("Stab. Delay", params.stabilization_delay, STABILIZATION_DELAY_MIN, STABILIZATION_DELAY_MAX, STABILIZATION_DELAY_INCREMENT, "ms");
+}  
+
+// *********************************************************************
+// **********          LEDON DELAY                  ********************
+// *********************************************************************
+//long led_on_delay = 0;
+#define LED_ON_DURATION_MIN 0L
+#define LED_ON_DURATION_MAX 5000L
+#define LED_ON_DURATION_INCREMENT 10L
+
+void LCDML_DISP_setup(LCDML_FUNC_setLedOnDuration)
+{
+  genericMethodForLongIntValue_setup("LedOn Delay", params.led_on_duration, LED_ON_DURATION_MIN, LED_ON_DURATION_MAX, LED_ON_DURATION_INCREMENT, "ms");
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_setLedOnDuration) 
+{
+  genericMethodForLongIntValue_loop("LedOn Delay", params.led_on_duration, LED_ON_DURATION_MIN, LED_ON_DURATION_MAX, LED_ON_DURATION_INCREMENT, "ms");
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_setLedOnDuration)
+{
+  genericMethodForLongIntValue_end("LedOn Delay", params.led_on_duration, LED_ON_DURATION_MIN, LED_ON_DURATION_MAX, LED_ON_DURATION_INCREMENT, "ms");
+}  
+
+// *********************************************************************
+// **********          RELAY STATE              ************************
+// *********************************************************************
+#define RELAY_STATES_COUNT 5
+//int relay_normal_state_id = 0;
+const char *relay_states[RELAY_STATES_COUNT] = {"Normaly Open", "Normaly Close"};
+
+
+void LCDML_DISP_setup(LCDML_FUNC_setRelayState)
+{
+  genericMethodForStringValues_setup("Relay  State", params.relay_normal_state_id, relay_states, RELAY_STATES_COUNT);
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_setRelayState) 
+{
+  genericMethodForStringValues_loop("Relay  State", params.relay_normal_state_id, relay_states, RELAY_STATES_COUNT);
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_setRelayState)
+{
+  genericMethodForStringValues_end("Relay  State", params.relay_normal_state_id, relay_states, RELAY_STATES_COUNT);
+}
+
+// *********************************************************************
+// **********          ACQUISITION MODE              *******************
+// *********************************************************************
+#define ACQUISITION_MODE_COUNT 7
+//int acquisition_mode_id = 0;
+const char *acquisition_modes[ACQUISITION_MODE_COUNT] = {"Config. 1", "Config. 2","Config. 3", "Config. 4", "Config. 5", "Config. 6", "Config. 7"};
+
+
+void LCDML_DISP_setup(LCDML_FUNC_setAcquisitionMode)
+{
+  genericMethodForStringValues_setup("Selected Mode", params.acquisition_mode_id, acquisition_modes, ACQUISITION_MODE_COUNT);
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_setAcquisitionMode) 
+{
+  genericMethodForStringValues_loop("Selected Mode", params.acquisition_mode_id, acquisition_modes, ACQUISITION_MODE_COUNT);
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_setAcquisitionMode)
+{
+  genericMethodForStringValues_end("Selected Mode", params.acquisition_mode_id, acquisition_modes, ACQUISITION_MODE_COUNT);
+}
+
+
+// *********************************************************************
+// **********          IR Brand selection              *****************
+// *********************************************************************
+
+//***************   multiCameraIrControl Library    ********************
+//http://sebastian.setz.name/arduino/my-libraries/multi-camera-ir-control/
+#define IR_MODE_COUNT 6
+//int acquisition_mode_id = 0;
+const char *ir_modes[ACQUISITION_MODE_COUNT] = {"Canon", "Olympus", "Pentax", "Minolta", "Sony", "Custom"};
+
+
+void LCDML_DISP_setup(LCDML_FUNC_setIRBrand)
+{
+  genericMethodForStringValues_setup("IR Mode", params.IR_signal_id, ir_modes, IR_MODE_COUNT);
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_setIRBrand) 
+{
+  genericMethodForStringValues_loop("IR Mode", params.IR_signal_id, ir_modes, IR_MODE_COUNT);
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_setIRBrand)
+{
+  genericMethodForStringValues_end("IR Mode", params.IR_signal_id, ir_modes, IR_MODE_COUNT);
+}
+
+
+// *********************************************************************
+void LCDML_DISP_setup(LCDML_FUNC_backInMenu)
+// *********************************************************************
+{
+}
+
+
+void LCDML_DISP_loop(LCDML_FUNC_backInMenu) 
+{
+    LCDML.goBack();
+    LCDML_DISP_funcend();
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_backInMenu)
+{
+
+}  
+
+
+
+// *********************************************************************
+void LCDML_DISP_setup(LCDML_FUNC_displayInfos)
+// *********************************************************************
+{
+  // setup function 
+  lcd.setCursor(0, 1);
+  lcd.print(F("  ZENITH OPEN RTI"));
+  lcd.setCursor(0, 2);
+  lcd.print(F("   Firmware v1.0"));
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_displayInfos) 
+{
+  // loop function, can be run in a loop when LCDML_DISP_triggerMenu(xx) is set
+  // the quit button works in every DISP function without any checks; it starts the loop_end function
+  
+  if(LCDML_BUTTON_checkAny()) { // check if any button is presed (enter, up, down, left, right)
+    // LCDML_DISP_funcend calls the loop_end function
+    LCDML_DISP_funcend();
+  } 
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_displayInfos)
+{
+  // this functions is ever called when a DISP function is quit
+  // you can here reset some global vars or do nothing  
+
+  //POUR TEST UNIQUEMENT
+  loadParametersFromEeprom();
+}  
+
+
+
+
+
+// *********************************************************************
+uint8_t g_func_timer_info = 0;  // time counter (global variable)
+unsigned long g_timer_1 = 0;    // timer variable (globale variable)
+void LCDML_DISP_setup(LCDML_FUNC_timer_info)
+// *********************************************************************
+{
+  // setup function   
+  lcd.print(F("x sec warten")); // print some content on first row  
+  g_func_timer_info = 10;       // reset and set timer    
+  LCDML_DISP_triggerMenu(100);  // starts a trigger event for the loop function every 100 millisecounds
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_timer_info)
+{ 
+  // loop function, can be run in a loop when LCDML_DISP_triggerMenu(xx) is set
+  // the quit button works in every DISP function without any checks; it starts the loop_end function 
+  
+  // this function is called every 100 millisecounds
+  
+  // this timer checks every 1000 millisecounds if it is called
+  if((millis() - g_timer_1) >= 1000) {
+    g_timer_1 = millis();   
+    g_func_timer_info--;                // increment the value every secound
+    lcd.setCursor(0, 0);                // set cursor pos
+    lcd.print(g_func_timer_info);       // print the time counter value
+  }
+  
+  // reset the initscreen timer
+  LCDML_DISP_resetIsTimer();
+  
+  // this function can only be ended when quit button is pressed or the time is over
+  // check if the function ends normaly
+  if (g_func_timer_info <= 0)
+  {
+    // end function for callback
+    LCDML_DISP_funcend();  
+  }   
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_timer_info) 
+{
+  // this functions is ever called when a DISP function is quit
+  // you can here reset some global vars or do nothing
+}
+
+// *********************************************************************
+uint8_t g_button_value = 0; // button value counter (global variable)
+void LCDML_DISP_setup(LCDML_FUNC_p2)
+// *********************************************************************
+{ 
+  // setup function
+  // print lcd content
+  lcd.setCursor(0, 0);
+  lcd.print(F("press left or up"));  
+  lcd.setCursor(0, 1);
+  lcd.print(F("count: 0 of 3"));
+  // Reset Button Value
+  g_button_value = 0; 
+}
+
+void LCDML_DISP_loop(LCDML_FUNC_p2)
+{
+  // loop function, can be run in a loop when LCDML_DISP_triggerMenu(xx) is set
+  // the quit button works in every DISP function without any checks; it starts the loop_end function 
+  
+  if (LCDML_BUTTON_checkAny()) // check if any button is pressed (enter, up, down, left, right)
+  {
+    if (LCDML_BUTTON_checkLeft() || LCDML_BUTTON_checkUp()) // check if button left is pressed
+    {
+      LCDML_BUTTON_resetLeft(); // reset the left button
+      LCDML_BUTTON_resetUp(); // reset the left button
+      g_button_value++;
+      
+      // update lcd content
+      lcd.setCursor(7, 1); // set cursor   
+      lcd.print(g_button_value); // print change content
+    }
+    if (LCDML_BUTTON_checkRight() || LCDML_BUTTON_checkDown()) // check if button left is pressed
+    {
+      LCDML_BUTTON_resetRight(); // reset the left button
+      LCDML_BUTTON_resetDown(); // reset the left button
+      g_button_value--;
+      
+      // update lcd content
+      lcd.setCursor(7, 1); // set cursor   
+      lcd.print(g_button_value); // print change content
+    }
+      
+  }
+  
+  // check if button count is three
+  if (g_button_value >= 3) {
+    // end function for callback
+    LCDML_DISP_funcend();   
+  } 
+}
+
+void LCDML_DISP_loop_end(LCDML_FUNC_p2) 
+{
+  // this functions is ever called when a DISP function is quit
+  // you can here reset some global vars or do nothing
+}
