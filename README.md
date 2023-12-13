@@ -1,3 +1,5 @@
+![logo](https://github.com/mbouhier/HASOR_files/blob/main/logo/logo_HASOR.jpg)
+
 # HASOR - OpenRTI Arduino and Hardware Repository
 
 Welcome to the official GitHub repository for the Arduino code and hardware design files related to the HASOR - OpenRTI device. This repository contains the necessary files for programming the Arduino, 3D printing components using STL files, and laser cutting using vector files.
