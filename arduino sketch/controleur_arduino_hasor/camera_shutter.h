@@ -61,7 +61,7 @@ void Shutter::init(ZenithParameters p){
   Serial.println(F("Initialisation: camera shutter"));
   pinMode(PIN_SHUTTER_RELAY, OUTPUT);
   pinMode(PIN_FOCUS_RELAY, OUTPUT);
-  
+
   this->_setRelayOFF();
 
   //if(parameters){

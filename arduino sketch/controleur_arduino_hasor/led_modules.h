@@ -122,8 +122,11 @@ void switch_off_all_leds(){
 void launch_leds_sequential_test(){
     long counter = 0;
     for(int i=0;i < LED_MODULES_COUNT;i++){
-      switch_on_led(i,0,2000L + counter);
-      counter += 100;
+      //switch_off_led(i,0,2000L + counter);
+      switch_on_led(i,0,1000L);
+      delay(500);
+      switch_off_led_by_id(i);
+      //counter += 800;
     }
 }
 

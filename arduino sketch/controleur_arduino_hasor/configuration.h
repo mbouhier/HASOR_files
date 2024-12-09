@@ -19,7 +19,7 @@
 
 #define SPLASH_SCREEN_DURATION 1000
   
-#define PIN_SHUTTER_IR_LED 42
+#define PIN_SHUTTER_IR_LED 3 // HACK 15/11/24 anciennement 42, mise sur la broche du endsgtop -X inutilisée
 #define PIN_SHUTTER_RELAY 5
 #define PIN_FOCUS_RELAY 4
 

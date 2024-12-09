@@ -1037,9 +1037,9 @@ void LCDML_DISP_setup(LCDML_FUNC_displayInfos)
 {
   // setup function 
   lcd.setCursor(0, 1);
-  lcd.print(F("  ZENITH OPEN RTI"));
+  lcd.print(F("   HASOR OPEN RTI"));
   lcd.setCursor(0, 2);
-  lcd.print(F("   Firmware v1.0"));
+  lcd.print(F("   Firmware  v1.1"));
 }
 
 void LCDML_DISP_loop(LCDML_FUNC_displayInfos) 
